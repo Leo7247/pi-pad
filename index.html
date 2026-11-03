@@ -1,0 +1,86 @@
+<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>Pi Pad</title><link rel=manifest href=manifest.webmanifest><link rel=icon href=icon.svg><meta name=theme-color content="#0a1020"><meta name=mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-capable content=yes>
+<style>
+:root{--bg:#0a1020;--edge:#2b3b66;--mint:#5ce1c6;--amber:#ffb454;--text:#e6edf7}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:600 14px system-ui,sans-serif;overflow:hidden;overscroll-behavior:none}
+#pad{position:fixed;inset:0;touch-action:none}#bg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.4;display:none}
+.zone{position:absolute;top:0;bottom:0;touch-action:none}#stick{left:0;width:42%}#cam{right:0;width:58%}
+#base{position:absolute;width:130px;height:130px;margin:-65px 0 0 -65px;border-radius:50%;border:2px solid var(--edge);background:#5ce1c61a;display:none;pointer-events:none}
+#knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:var(--mint);box-shadow:0 0 22px #5ce1c699}
+.hint{position:absolute;bottom:18px;color:#8b9bbd;font-weight:400;pointer-events:none}
+.b{position:absolute;border:2px solid var(--edge);background:#111a30cc;color:var(--text);border-radius:16px;touch-action:none;font:inherit;display:grid;place-items:center}
+.b.on{background:var(--mint);color:#04261f;border-color:var(--mint)}#jump{right:max(24px,env(safe-area-inset-right));bottom:24px;width:104px;height:104px;border-radius:50%;font-size:16px}
+#keys{position:absolute;right:max(150px,env(safe-area-inset-right));bottom:24px;display:grid;grid-template-columns:repeat(4,52px);gap:8px}#keys .b{position:static;height:52px}
+#hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;z-index:5}
+#hud .b{position:static;padding:8px 12px;border-radius:10px;min-width:44px}#st{font-weight:400;color:#8b9bbd;min-width:90px;text-align:center}
+#cal{position:fixed;inset:0;background:var(--bg);display:none;z-index:8}#cal img{width:100%;height:100%;object-fit:contain}
+#calmsg{position:absolute;top:10px;left:0;right:0;text-align:center;background:#0a1020cc;padding:8px}
+#login{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;padding:20px;z-index:9}
+#login input{width:100%;padding:14px;margin:12px 0;border-radius:10px;border:1px solid var(--edge);background:#111a30;color:var(--text);font:inherit;user-select:text}
+#login button{width:100%;padding:14px;border:0;border-radius:10px;background:var(--mint);color:#04261f;font:inherit;font-weight:800}
+</style></head><body>
+<div id=login><form id=lf style="width:min(380px,100%)"><h2>Pi Pad</h2><p style="color:#8b9bbd;font-weight:400">Enter your access token. Turn your phone sideways to play.</p>
+<input id=addr placeholder="Pi address (https://...trycloudflare.com)" autocapitalize=off autocorrect=off spellcheck=false><input id=tok type=password placeholder="Access token" required><button>Connect</button><p id=err style="color:#ff6b7a;font-weight:400"></p></form></div>
+<div id=pad><img id=bg alt="">
+<div id=stick class=zone><div id=base><div id=knob></div></div><span class=hint style="left:24px">Move</span></div>
+<div id=cam class=zone><span class=hint style="right:24px;bottom:150px">Look</span></div>
+<div id=hud><span id=st>Connecting…</span><button class=b id=mode>Touch</button><button class=b id=prev>Preview</button><button class=b id=calb>Calibrate</button><button class=b id=fs>Full</button></div>
+<div id=keys></div><button class=b id=jump>JUMP</button></div>
+<div id=cal><img id=calimg alt=""><div id=calmsg></div></div>
+<script>
+const $=s=>document.querySelector(s),ls=localStorage;let tok=sessionStorage.getItem('t')||'',PI=localStorage.getItem('addr')||'',ws,okc=false;
+const cfg=Object.assign({J:[.9,.8],S:[.2,.7],C:[.68,.45],mode:'touch'},JSON.parse(ls.getItem('pad')||'{}'));const save=()=>ls.setItem('pad',JSON.stringify(cfg));
+const tx=o=>ws&&ws.readyState===1&&ws.send(JSON.stringify(o));
+function connect(){let opened=false;ws=new WebSocket(PI.replace(/^http/,'ws')+'/ws?token='+encodeURIComponent(tok));
+ws.onopen=()=>{opened=true;sessionStorage.setItem('t',tok);$('#login').style.display='none'};
+ws.onmessage=e=>{const m=JSON.parse(e.data);if('ok'in m){okc=m.ok;if(!m.ok){$('#st').textContent=m.err||'Starting control…';if(!m.err)tx({t:'retry'})}}
+if(m.pong){$('#st').textContent=okc?Math.round(performance.now()-m.pong)+' ms':($('#st').textContent)}};
+ws.onclose=()=>{if(!opened){$('#login').style.display='grid';$('#err').textContent='Could not connect. Check the address and token, and that the Pi server and tunnel are running.';sessionStorage.removeItem('t');return}$('#st').textContent='Reconnecting…';setTimeout(connect,1000)}}
+$('#addr').value=PI===location.origin?'':PI;
+$('#lf').onsubmit=e=>{e.preventDefault();let a=$('#addr').value.trim().replace(/\/+$/,'');if(!a)a=location.origin;else if(!/^https?:\/\//.test(a))a='https://'+a;
+if(location.protocol==='https:'&&a.startsWith('http:')){$('#err').textContent='This site uses https, so the Pi address must start with https:// (use the tunnel link).';return}
+PI=a;localStorage.setItem('addr',a);tok=$('#tok').value;connect()};if(tok&&PI)connect();
+setInterval(()=>tx({t:'ping',ts:performance.now()}),2000);
+const buzz=()=>navigator.vibrate&&navigator.vibrate(8);
+// Move stick: touch mode sends a finger on the Pi; WASD mode holds keys.
+const R=62,WASD={w:51,a:29,s:47,d:32};let held={};
+function setKeys(n){for(const k in WASD){if(!!n[k]!==!!held[k])tx({t:'key',k:WASD[k],d:!!n[k]})}held=n}
+const st=$('#stick'),base=$('#base'),knob=$('#knob');let sp=null,lastS=0;
+st.onpointerdown=e=>{if(sp!==null)return;sp=e.pointerId;st.setPointerCapture(sp);st.o=[e.clientX,e.clientY];base.style.display='block';base.style.left=e.clientX+'px';base.style.top=e.clientY+'px';knob.style.transform='';
+if(cfg.mode==='touch')tx({t:'down',id:0,x:cfg.S[0],y:cfg.S[1]})};
+st.onpointermove=e=>{if(e.pointerId!==sp)return;let dx=(e.clientX-st.o[0])/R,dy=(e.clientY-st.o[1])/R;const l=Math.hypot(dx,dy);if(l>1){dx/=l;dy/=l}
+knob.style.transform=`translate(${dx*R}px,${dy*R}px)`;
+if(cfg.mode==='touch'){const n=performance.now();if(n-lastS<12)return;lastS=n;tx({t:'move',id:0,x:cfg.S[0]+dx*.07,y:cfg.S[1]+dy*.12})}
+else setKeys({w:dy<-.35,s:dy>.35,a:dx<-.35,d:dx>.35})};
+const endS=e=>{if(e.pointerId!==sp)return;sp=null;base.style.display='none';if(cfg.mode==='touch')tx({t:'up',id:0,x:cfg.S[0],y:cfg.S[1]});else setKeys({})};
+st.onpointerup=st.onpointercancel=endS;
+// Look pad: relative drag, re-anchors so the Pi finger never leaves the screen.
+const cm=$('#cam');let cp=null,cl,off=[0,0];const SENS=.5;
+cm.onpointerdown=e=>{if(cp!==null)return;cp=e.pointerId;cm.setPointerCapture(cp);cl=[e.clientX,e.clientY];off=[0,0];tx({t:'down',id:1,x:cfg.C[0],y:cfg.C[1]})};
+cm.onpointermove=e=>{if(e.pointerId!==cp)return;off[0]+=(e.clientX-cl[0])/innerWidth*SENS;off[1]+=(e.clientY-cl[1])/innerHeight*SENS;cl=[e.clientX,e.clientY];
+if(Math.abs(off[0])>.14||Math.abs(off[1])>.2){tx({t:'up',id:1,x:cfg.C[0]+off[0],y:cfg.C[1]+off[1]});off=[0,0];tx({t:'down',id:1,x:cfg.C[0],y:cfg.C[1]})}
+else tx({t:'move',id:1,x:cfg.C[0]+off[0],y:cfg.C[1]+off[1]})};
+cm.onpointerup=cm.onpointercancel=e=>{if(e.pointerId!==cp)return;cp=null;tx({t:'up',id:1,x:cfg.C[0]+off[0],y:cfg.C[1]+off[1]})};
+// Buttons
+function hold(el,down,up){el.onpointerdown=e=>{e.stopPropagation();el.setPointerCapture(e.pointerId);el.classList.add('on');buzz();down()};
+el.onpointerup=el.onpointercancel=e=>{el.classList.remove('on');up()}}
+hold($('#jump'),()=>cfg.mode==='touch'?tx({t:'down',id:2,x:cfg.J[0],y:cfg.J[1]}):tx({t:'key',k:62,d:true}),
+()=>cfg.mode==='touch'?tx({t:'up',id:2,x:cfg.J[0],y:cfg.J[1]}):tx({t:'key',k:62,d:false}));
+[['Esc',111],['Chat',76],['Shift',59],['Tab',61],['E',33],['Q',45],['R',46],['F',34]].forEach(([n,k])=>{const b=document.createElement('button');b.className='b';b.textContent=n;
+hold(b,()=>tx({t:'key',k,d:true}),()=>tx({t:'key',k,d:false}));$('#keys').append(b)});
+// HUD
+const setMode=()=>{$('#mode').textContent=cfg.mode==='touch'?'Touch':'WASD'};setMode();
+$('#mode').onclick=()=>{cfg.mode=cfg.mode==='touch'?'keys':'touch';save();setMode()};
+let pv=0;$('#prev').onclick=()=>{pv=!pv;$('#bg').style.display=pv?'block':'none';if(pv)bgLoop()};
+function bgLoop(){if(!pv)return;const i=$('#bg');i.onload=()=>setTimeout(bgLoop,150);i.onerror=()=>setTimeout(bgLoop,1500);i.src=PI+'/screen?token='+encodeURIComponent(tok)+'&t='+Date.now()}
+$('#fs').onclick=async()=>{try{await document.documentElement.requestFullscreen();await screen.orientation.lock('landscape')}catch(e){}};
+// Calibrate: tap where each control sits on the Pi's screen.
+const steps=[['Tap the JUMP button','J'],['Tap where the move stick should start (left side, near the bottom)','S'],['Tap where look-drag should start (right side, middle)','C']];let si=0;
+$('#calb').onclick=()=>{si=0;$('#cal').style.display='block';$('#calmsg').textContent=steps[0][0];$('#calimg').src=PI+'/screen?token='+encodeURIComponent(tok)+'&t='+Date.now()};
+$('#calimg').onclick=e=>{const i=e.target,r=i.getBoundingClientRect(),W=i.naturalWidth,H=i.naturalHeight,s=Math.min(r.width/W,r.height/H),
+ox=r.left+(r.width-W*s)/2,oy=r.top+(r.height-H*s)/2,x=(e.clientX-ox)/(W*s),y=(e.clientY-oy)/(H*s);
+if(x<0||x>1||y<0||y>1)return;cfg[steps[si][1]]=[+x.toFixed(4),+y.toFixed(4)];save();si++;
+if(si>=steps.length){$('#cal').style.display='none'}else $('#calmsg').textContent=steps[si][0]};
+addEventListener('contextmenu',e=>e.preventDefault());
+</script></body></html>
